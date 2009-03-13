@@ -1,0 +1,5 @@
+hpricot --version '>= 0.2' --source code.whytheluckystiff.net
+dm-core --version 0.9.10
+dm-timestamps
+stemmer
+sausheong-robots
