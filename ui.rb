@@ -1,7 +1,6 @@
 require 'rubygems'
 require 'digger'
 require 'sinatra'
-require 'pp'
 
 get '/' do
   erb :search
