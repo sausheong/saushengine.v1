@@ -1,0 +1,268 @@
+Create an Internet search engine with 200 lines of Ruby code
+
+Most people who know me realises at some point in time that I go through cycles where I dive into things that catch my imagination and obsess over it for days, weeks or even months. Some things like origami and programming never really go away while others like bread-making make cometary orbits that come once in a few years. In the past long gone, this was fueled mainly through reading copious amounts of books and magazines, but since the arrival of the Internet, my obsessive cycles reach new peaks. It allowed me to reach out to like minded people and provided a massive amount of data that I can never hope to conquer.
+
+Fortunately with search engines, I don't need to conquer them by myself. Search engines are almost ubiquitous on the Internet, the most famous one has since become a verb. In June 2006, the verb 'to google' was officially added to the Oxford English Dictionary. The barrier to entry for obsessing over something is now nothing more than an Internet connection away. So it's only natural that search engines has now become my new obsessive interest. This of course has been enhanced in particular by the fact that I work for Yahoo!, who owns second most popular web search engine in the world. 
+
+The topics on search engines are pretty vast. Much of it is centered around search engine optimization (SEO), which contrary to its name, is not about optimizing search engines but about optimizing web sites to make it rise to the top of a search engine results list. However this is not what I'm interested in (at this moment). What I'm interested in is how search engines work, what makes it tick, basically the innards of a search engine. As part of my research, I wrote a search engine using Ruby, called SaushEngine, which I will describe in full here.
+
+Surprisingly, as I delved deeper into the anatomy of a search engine, most search engines are pretty much the same. Sure, the implementation can be vastly different but the basic ideas are pretty much universal in all the search engines I looked at, including web search engines such as Yahoo! and Google as well as standalone ones such as Sphinx, ht://Dig, Lucence and Nutch. In essence, any search engine has these 3 parts:
+
+Crawl - the part of the search engine that goes around extracting data from various data sources that are being searched
+Index - the part of the search engine that processes the data that has been extracted during the crawl and stores it
+Query - the part of the search engine that allows a user to query the search engine and result ranked results
+
+This article will describe how each part works and how my Ruby search engine implements it. SaushEngine (pun intended) is a simple web search engine, that is around 200 lines of Ruby code. However I do cheat a bit and use various libraries extensively including Hpricot, DataMapper and the Porter Stemmer. SaushEngine is a web search engine which means it goes out to  Internet and harvests data on Internet web sites. Having said that, it's definitely not production grade and lacks much of the features of a proper search engine (including high performance) in exchange for a simpler implementation.
+
+Crawl
+
+Let's start with the crawl phase of SaushEngine. SaushEngine has a web crawler typically called Spider (spider crawls the web -- get it? I know, it's an old joke), in 2 files named spider.rb and index.rb. This crawler doesn't just extract the information only though, it partly processes the data as well. It is designed this way to simplify the overall design. In this section we'll concentrate on the crawling parts first.
+
+There are a number of things to consider when designing a crawler, the most important amongst which are:
+
+How do we crawl?
+What kind of documents do we want to get?
+Which sites are we allowed to visit?
+How do we re-crawl and how often?
+How fast can we crawl?
+
+Many search engine designs approach crawling modularly by detaching the dependency of the crawler to the index and query design. For example in Lucene, the crawler is not even part of the search engine and the implementer is expected to provide the data source. On the other hand, some crawlers are not built for search engines, but for research into the Internet in general. In fact, the first crawler, the World Wide Web Wanderer, was deployed in 1993 to measure the size of the Internet. As mentioned before, to simplify the design, SaushEngine's crawler is an integral part of the search engine and the design is not modular. The subject of web crawlers is a topic of intensive research, with tons of existing literature dating from the late 1990s till today. Without going extensively into them, let's see how SaushEngine is designed to answer some of those questions. 
+
+How do we crawl?
+This is the central question. Google claimed in a blog entry in the official Google blog in July 2008 that they found 1 trillion unique URLs (http://googleblog.blogspot.com/2008/07/we-knew-web-was-big.html). That's a whole lot of web pages. As a result, there is always the question of the value of visiting a particular page and prioritizing which sites to crawl are important to get the strategic sites in an evenly distributed way. 
+
+Most crawlers work by starting with bunch 'seed' URLs and following all links in those seeds, so this means choosing the correct seeds are critical to having a good index. SaushEngine uses a breadth-first strategy in crawling sites from its seed URLs.
+
+While we're discussing the generic Internet crawler here, there exist a more focused type of crawler that only crawls specific sites or topics etc. For example, I could crawl only food-related sites or anime-related sites. The specifics in implementation will be different but the core mechanism will remain the same.
+
+What kind of documents do we want to get?
+Obviously for an Internet web crawler, we what are looking are all the web pages on the various web sites on the Internet. Some more advanced search engines include Word documents, Acrobat documents, Powerpoint presentations and so on but predominantly the main data source are HTML-based web pages that are reference by URLs. The SaushEngine design only crawls for html documents and ignore all other types of documents. This has an impact when we go into the indexing phase. Besides blocking off URLs that end with certain types such as .doc, .pdf, .avi etc, SaushEngine also rejects links with '?' in it as the likelihood of generated content or it being a web application is high.
+
+Which sites are we allowed to visit?
+A major concern many web sites have against web crawlers are that they will consume bandwidth and incur costs for the owners of the various site it crawls. As a response to this concern, the Robots Exclusion Protocol was created where a file named robots.txt is placed at the root level of a domain and this file tells compliant crawlers which parts of the site is allowed or not allowed. SaushEngine parses the robots.txt file for each site to extract the permissions and complies with the permissions in the file.
+
+How do we re-crawl and how often?
+Web pages are dynamic. Content in web pages can change regularly, irregularly or even never. A good search engine should be able to balance between the freshness of the page (which makes it more relevant) to the frequency of the visits (which consumes resources). SaushEngine make a simple assumption that any page should be revisited if it is older than 1 week (a controllable parameter).
+
+How fast can we crawl?
+Performance of the crawler is critical to the search engine. It determines the number of pages in its index, which in turn determines how useful and relevant the search engine is. The SaushEngine crawler is rather slow because it's not designed for speed but for ease of understanding of crawler concepts.
+
+Let's go deeper into the design. This is the full source code for index.rb
+
+[code]
+require 'rubygems'
+require 'dm-core'
+require 'dm-timestamps'
+require 'stemmer'
+require 'robots'
+require 'open-uri'
+require 'hpricot'
+
+DataMapper.setup(:default, 'mysql://root:root@localhost/saush')
+FRESHNESS_POLICY = 60 * 60 * 24 * 7 # 7 days
+
+class Page
+  include DataMapper::Resource
+
+  property :id,          Serial
+  property :url,         String, :length => 255
+  property :title,       String, :length => 255
+  has n, :locations
+  has n, :words, :through => :locations
+  property :created_at,  DateTime
+  property :updated_at,  DateTime  
+  
+  def self.find(url)
+    page = first(:url => url)
+    page = new(:url => url) if page.nil?
+    return page
+  end
+
+  def refresh
+    update_attributes({:updated_at => DateTime.parse(Time.now.to_s)})
+  end
+  
+  def age
+    (Time.now - updated_at.to_time)/60
+  end
+
+  def fresh?
+    age > FRESHNESS_POLICY ? false : true 
+  end
+end
+
+class Word
+  include DataMapper::Resource
+
+  property :id,         Serial
+  property :stem,       String
+  has n, :locations
+  has n, :pages, :through => :locations
+
+  def self.find(word)
+    wrd = first(:stem => word)
+    wrd = new(:stem => word) if wrd.nil?
+    return wrd
+  end
+end
+
+class Location
+  include DataMapper::Resource
+
+  property :id,         Serial
+  property :position,   Integer
+
+  belongs_to :word
+  belongs_to :page
+end
+
+class String
+  def words
+    words = self.gsub(/[^\w\s]/,"").split
+    d = []
+    words.each { |word| d << word.downcase.stem unless (COMMON_WORDS.include?(word) or word.size > 50) }
+    return d
+  end
+
+  COMMON_WORDS = ['a','able','about','above','abroad','according',...,'zero']  # truncated
+end
+
+DataMapper.auto_migrate! if ARGV[0] == 'reset'
+[/code]
+
+Note the various libraries I used for SaushEngine:
+DataMapper
+Stemmer
+Robots
+Hpricot
+
+I also use the MySQL relational database as my index (which we'll get to later). In the Page class, note the fresh?, age and refresh methods. The fresh? method checks if the page is fresh or not, and the freshness of the page is determined by the age of the page since it was last updated. Also note that I extended the String class by adding a words method that returns a stem of all the words from the string, excluding an array of common words or if the word is really long. We'll see how this is used in a while.
+
+Now take a look at spider.rb, which is probably the largest file in SaushEngine, around 100 lines of code:
+
+[code]
+require 'rubygems'
+require 'index'
+
+LAST_CRAWLED_PAGES = 'seed.yml'
+DO_NOT_CRAWL_TYPES = %w(.pdf .doc .xls .ppt .mp3 .m4v .avi .mpg .rss .xml .json .txt .git .zip .md5 .asc .jpg .gif .png)
+USER_AGENT = 'saush-spider'
+
+class Spider
+  
+  # start the spider
+  def start
+    Hpricot.buffer_size = 204800
+    process(YAML.load_file(LAST_CRAWLED_PAGES))
+  end
+
+  # process the loaded pages
+  def process(pages)
+    robot = Robots.new USER_AGENT
+    until pages.nil? or pages.empty? 
+      newfound_pages = []
+      pages.each { |page|
+        begin
+          if add_to_index?(page) then          
+            uri = URI.parse(page)
+            host = "#{uri.scheme}://#{uri.host}"
+            open(page, "User-Agent" => USER_AGENT) { |s|
+              (Hpricot(s)/"a").each { |a|                
+                url = scrub(a.attributes['href'], host)
+                newfound_pages << url unless url.nil? or !robot.allowed? url or newfound_pages.include? url
+              }
+            } 
+          end
+        rescue => e 
+          print "\n** Error encountered crawling - #{page} - #{e.to_s}"
+        rescue Timeout::Error => e
+          print "\n** Timeout encountered - #{page} - #{e.to_s}"
+        end
+      }
+      pages = newfound_pages
+      File.open(LAST_CRAWLED_PAGES, 'w') { |out| YAML.dump(newfound_pages, out) }
+    end    
+  end
+
+  # add the page to the index
+  def add_to_index?(url)
+    print "\n- indexing #{url}" 
+    t0 = Time.now
+    page = Page.find(scrub(url))
+    
+    # if the page is not in the index, then index it
+    if page.new_record? then    
+      index(url) { |doc_words, title|
+        dsize = doc_words.size.to_f
+        puts " [new] - (#{dsize.to_i} words)"
+        doc_words.each_with_index { |w, l|    
+          printf("\r\e - %6.2f%",(l*100/dsize))
+          loc = Location.new(:position => l)
+          loc.word, loc.page, page.title = Word.find(w), page, title
+          loc.save
+        }
+      }
+    
+    # if it is but it is not fresh, then update it
+    elsif not page.fresh? then
+      index(url) { |doc_words, title|
+        dsize = doc_words.size.to_f
+        puts " [refreshed] - (#{dsize.to_i} words)"
+        page.locations.destroy!
+        doc_words.each_with_index { |w, l|    
+          printf("\r\e - %6.2f%",(l*100/dsize))
+          loc = Location.new(:position => l)
+          loc.word, loc.page, page.title = Word.find(w), page, title
+          loc.save
+        }        
+      }
+      page.refresh
+      
+    #otherwise just ignore it
+    else
+      puts " - (x) already indexed"
+      return false
+    end
+    t1 = Time.now
+    puts "  [%6.2f sec]" % (t1 - t0)
+    return true          
+  end
+  
+  # scrub the given link
+  def scrub(link, host=nil)
+    unless link.nil? then
+      return nil if DO_NOT_CRAWL_TYPES.include? link[(link.size-4)..link.size] or link.include? '?' or link.include? '/cgi-bin/' or link.include? '&' or link[0..8] == 'javascript' or link[0..5] == 'mailto'
+      link = link.index('#') == 0 ? '' : link[0..link.index('#')-1] if link.include? '#'
+      if link[0..3] == 'http'
+        url = URI.join(URI.escape(link))                
+      else
+        url = URI.join(host, URI.escape(link))
+      end
+      return url.normalize.to_s
+    end
+  end
+
+  # do the common indexing work
+  def index(url)
+    open(url, "User-Agent" => USER_AGENT){ |doc| 
+      h = Hpricot(doc)
+      title, body = h.search('title').text.strip, h.search('body')
+      %w(style noscript script form img).each { |tag| body.search(tag).remove}
+      array = []
+      body.first.traverse_element {|element| array << element.to_s.strip.gsub(/[^a-zA-Z ]/, '') if element.text? }
+      array.delete("")
+      yield(array.join(" ").words, title)
+    }    
+  end  
+end
+
+$stdout.sync = true 
+spider = Spider.new
+spider.start
+
+[/code]
+
+The Spider class is a full-fledged Internet crawler. It loads its seed URLs from a YAML file named 'seed.yml' and processes each URL in that list. To play nice and comply with the Robots Exclusion Protocol, I use a slightly modified Robots library based on Kyle Maxwell's robots library, and set the name of the crawler as 'saush-spider'. As the crawler goes through each URL, it tries to index each one of them. If it successfully indexes the page, it goes through each link in the page and tries to add it to newly found pages bucket if it is allowed, or if if it not already added. At the end of the original seed list, it will take this bucket and replace it in the seed URLs list in the YAML file. This is effectively a breadth-first search that goes through each URL at every level before going down to the next level.
+
+The flow of adding to the index goes like this. First, we need to scrub the  we check if the URL is in the index already, if it's not, we proceed to index it. If it already is, we'll check for the page's freshness and index it if it's stale.
+

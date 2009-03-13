@@ -1,0 +1,31 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <meta content="text/html; charset=utf-8"
+ http-equiv="content-type">
+  <title>SaushEngine - UI</title>
+  <style>
+	body {
+	font-family:"lucida grande",tahoma,arial,sans-serif;
+	font-size:11px;
+	margin:5;
+	padding:5;
+	}
+  </style>
+</head>
+<body>
+<form method="post" action="/search">
+	 <input name="q" value="<%= params[:q]%>" size="60"> <input value="search" type="submit">
+</form>
+
+<div><%= "time taken - #{@time_taken}" unless @results.nil?%></div>
+<div id='results'>
+<ol>
+<% @results.each { |result| %>
+	<li><a href='<%= Page.get(result[0]).url%>'><%= Page.get(result[0]).title%></a> <br>
+		<%= Page.get(result[0]).url%>  (score : <%= "%4.3f" % result[1]%>)</li>
+<% } unless @results.nil? %>
+</ol>
+</div>
+</body>
+</html>
