@@ -36,7 +36,7 @@ Most crawlers work by starting with bunch 'seed' URLs and following all links in
 While we're discussing the generic Internet crawler here, there exist a more focused type of crawler that only crawls specific sites or topics etc. For example, I could crawl only food-related sites or anime-related sites. The specifics in implementation will be different but the core mechanism will remain the same.
 
 What kind of documents do we want to get?
-Obviously for an Internet web crawler, we what are looking are all the web pages on the various web sites on the Internet. Some more advanced search engines include Word documents, Acrobat documents, Powerpoint presentations and so on but predominantly the main data source are HTML-based web pages that are reference by URLs. The SaushEngine design only crawls for html documents and ignore all other types of documents. This has an impact when we go into the indexing phase. Besides blocking off URLs that end with certain types such as .doc, .pdf, .avi etc, SaushEngine also rejects links with '?' in it as the likelihood of generated content or it being a web application is high.
+Obviously for an Internet web crawler, we what are looking are all the web pages on the various web sites on the Internet. Some more advanced search engines include Word documents, Acrobat documents, Powerpoint presentations and so on but predominantly the main data source are HTML-based web pages that are reference by URLs. The SaushEngine design only crawls for html documents and ignore all other types of documents. This has an impact when we go into the indexing phase. Besides blocking off URLs that end with certain types such as .doc, .pdf, .avi etc, SaushEngine also rejects URLs with '?', '&' and '/cgi-bin/' in them as the likelihood of generated content or it being a web application is high.
 
 Which sites are we allowed to visit?
 A major concern many web sites have against web crawlers are that they will consume bandwidth and incur costs for the owners of the various site it crawls. As a response to this concern, the Robots Exclusion Protocol was created where a file named robots.txt is placed at the root level of a domain and this file tells compliant crawlers which parts of the site is allowed or not allowed. SaushEngine parses the robots.txt file for each site to extract the permissions and complies with the permissions in the file.
@@ -136,7 +136,7 @@ Stemmer
 Robots
 Hpricot
 
-I also use the MySQL relational database as my index (which we'll get to later). In the Page class, note the fresh?, age and refresh methods. The fresh? method checks if the page is fresh or not, and the freshness of the page is determined by the age of the page since it was last updated. Also note that I extended the String class by adding a words method that returns a stem of all the words from the string, excluding an array of common words or if the word is really long. We'll see how this is used in a while.
+I also use the MySQL relational database as the index (which we'll get to later). In the Page class, note the fresh?, age and refresh methods. The fresh? method checks if the page is fresh or not, and the freshness of the page is determined by the age of the page since it was last updated. Also note that I extended the String class by adding a words method that returns a stem of all the words from the string, excluding an array of common words or if the word is really long. I create the array of word stems using the Porter stemmer. We'll see how this is used in a while.
 
 Now take a look at spider.rb, which is probably the largest file in SaushEngine, around 100 lines of code:
 
@@ -186,17 +186,12 @@ class Spider
 
   # add the page to the index
   def add_to_index?(url)
-    print "\n- indexing #{url}" 
-    t0 = Time.now
     page = Page.find(scrub(url))
     
     # if the page is not in the index, then index it
     if page.new_record? then    
       index(url) { |doc_words, title|
-        dsize = doc_words.size.to_f
-        puts " [new] - (#{dsize.to_i} words)"
         doc_words.each_with_index { |w, l|    
-          printf("\r\e - %6.2f%",(l*100/dsize))
           loc = Location.new(:position => l)
           loc.word, loc.page, page.title = Word.find(w), page, title
           loc.save
@@ -206,11 +201,8 @@ class Spider
     # if it is but it is not fresh, then update it
     elsif not page.fresh? then
       index(url) { |doc_words, title|
-        dsize = doc_words.size.to_f
-        puts " [refreshed] - (#{dsize.to_i} words)"
         page.locations.destroy!
         doc_words.each_with_index { |w, l|    
-          printf("\r\e - %6.2f%",(l*100/dsize))
           loc = Location.new(:position => l)
           loc.word, loc.page, page.title = Word.find(w), page, title
           loc.save
@@ -220,11 +212,8 @@ class Spider
       
     #otherwise just ignore it
     else
-      puts " - (x) already indexed"
       return false
     end
-    t1 = Time.now
-    puts "  [%6.2f sec]" % (t1 - t0)
     return true          
   end
   
@@ -262,7 +251,160 @@ spider.start
 
 [/code]
 
-The Spider class is a full-fledged Internet crawler. It loads its seed URLs from a YAML file named 'seed.yml' and processes each URL in that list. To play nice and comply with the Robots Exclusion Protocol, I use a slightly modified Robots library based on Kyle Maxwell's robots library, and set the name of the crawler as 'saush-spider'. As the crawler goes through each URL, it tries to index each one of them. If it successfully indexes the page, it goes through each link in the page and tries to add it to newly found pages bucket if it is allowed, or if if it not already added. At the end of the original seed list, it will take this bucket and replace it in the seed URLs list in the YAML file. This is effectively a breadth-first search that goes through each URL at every level before going down to the next level.
+The Spider class is a full-fledged Internet crawler. It loads its seed URLs from a YAML file named 'seed.yml' and processes each URL in that list. To play nice and comply with the Robots Exclusion Protocol, I use a slightly modified Robots library based on Kyle Maxwell's robots library, and set the name of the crawler as 'saush-spider'. As the crawler goes through each URL, it tries to index each one of them. If it successfully indexes the page, it goes through each link in the page and tries to add it to newly found pages bucket if it is allowed (checking robots.txt), or if if it not already added. At the end of the original seed list, it will take this bucket and replace it in the seed URLs list in the YAML file. This is effectively a breadth-first search that goes through each URL at every level before going down to the next level.
 
-The flow of adding to the index goes like this. First, we need to scrub the  we check if the URL is in the index already, if it's not, we proceed to index it. If it already is, we'll check for the page's freshness and index it if it's stale.
+The flow of adding to the index goes like this. First, we need to scrub the URL by taking out URLs that are suspected to be web applications (like Google Calendar, Yahoo Mail etc)  we check if the URL is in the index already, if it's not, we proceed to index it. If it already is, we'll check for the page's freshness and re-index it if it's stale. Otherwise, we'll just leave it alone.
+
+That's it! The crawling part is rather simple but slow. To use this effectively we will need to add in capabilities to run a whole bunch of spiders at the same time but this will do for now. Let's get to the indexing part next. 
+
+Index
+
+Indexing involves parsing and storing data that has been collected by the crawler. The main objective here is to build a index that can be used to query and retrieve the stored data quickly. But what exactly is an index?
+
+An index in our context is a data structure that helps us to look up a data store quickly. Take any data store that has N number of records. If we want to find a document in this data store we would need to go through each record to check if that's the one we're looking for before proceeding to the next. If it takes 0.01s to check each document and if we have 100,000 records, we'll take 0.01 second at best case, 1,000 seconds to search through the data store at worst case and 500 seconds on average. Performance is therefore time linear or we say it takes O(N) time. That's way too slow for any search engine to effectively handle millions or billions of records. 
+
+To improve the search performance, we insert an intermediate data structure between the query and the actual data store. This data structure, which is the index, allows us to return results in much improved times. 
+
+There are many different types of data structures that can be used as an index to the data store but the most popular one used by search engines is the inverted index. A normal way of mapping documents to words (called the forward index) are to have each document map to a list of words. For example:
+<se01>
+
+An inverted index however maps words to the documents where they are found.
+<se02>
+	
+A quick look at why inverted indices is much faster. Say we want to find all documents in the data store that has the word 'fox' in it. To do this on a normal forward index, we need to go through each record to check for the word 'fox' i.e. in our example above, we need to check the forward index 4 times to find that it exists in document 2 and 3. In the case of the inverted index, we need to just go to the 'fox' record and find out that it exists in document 2 and 3. Imagine a data store of a millions of records and you can see why an inverted index is so much more effective.
+
+In addition, a full inverted index also includes the position of the word within the document:
+<se03>
+
+This is useful for us later during the query phase.
+
+SaushEngine implements an inverted index in a relational database. Let's look at how this is implemented. I used MySQL as it is the most convenient but with some slight modifications you can probably use any relational database.
+
+<se04>
+	
+The Pages table stores the list of web pages that has been crawled, along with its title and URL. The updated_at field determines if the page is stale and should be refreshed. The Words table stores a list of all words found in all documents. The words in this table however are stemmed using the Porter stemmer prior to storing, in order to reduce the number of words stored. An improved strategy could be to also include alternate but non-standard synonyms for e.g. database can be referred as DB but to keep things simple, only stemming is used. By this time you should recognize that Locations table is the inverted index, which maps words and its positions to the document. To access and interact with these tables through Ruby, I used DataMapper, an excellent Ruby object-relational mapping library. However a point to note is that DataMapper doesn't allow you to create indices on the relationship foreign keys, so you'll have to do it yourself. I found that putting 3 indices -- 1 for word_id, 1 for page_id and 1 with word_id and page_id improves the query performance tremendously.
+
+Now that we have the index, let's go back and look at parsing the information that is retrieved through the spider. The bulk of the work is in the index and add_to_index? methods in the Spider class. The index method is called from the add_to_index? method, along with the scrubbed URL and a code block that utilizes DataMapper to add the words and its locations into the index. 
+
+Using Open URI, the web page is extracted and Hpricot is used to parse the HTML. I take only the body of the document, and removed non-text portions of the document like inline scripts and styles, forms and so on. Going through each remaining element, I take only the explicitly text elements and drop the rest. Next, I tokenize the text. My strategy is pretty simple, which is to delimit the text by white spaces only. As a side note, while this works pretty ok in English text, it doesn't work as well in other languages especially Asian languages such as Chinese or Korean (where sometimes there are no white space delineation at all). The resulting tokens, which are words, are run through the Porter stemmer to produce word stems. These word stems are the ones that are added to the index.
+
+Another side note -- if you're not a Rubyist or a beginner Rubyist you might interested to see that I actually passed an entire code block into the index method. This block differs if it's a new web page or a refreshed web page. Doing this reduces the amount of duplicate code I had to write which makes the code easier to maintain and to read.
+
+Also if you're wondering what happened to keyword meta-tags, you're right, I didn't use them. There is no big philosophical reasoning why I skipped them -- I just wanted to focus on the document text and not give any special consideration to keywords in the meta tag. 
+
+Finally let's look at the query phase of the search engine, which all that we've talked about before comes together.
+
+Query
+
+The query phase of the search engine allows a user to express his intent and get relevant results. The search query input is most often limited to a single text box. As a result of this constraint, there are a number of problems. Firstly, because the user can only express his question in a single line of text, the true intention of the user can vary widely. For example, if I type in 'apple' as the search input, do I mean the computer company or the fruit? There is no way the search engine can find out absolutely from the user. Of course, a more seasoned search user would put in more clues, for example, 'apple mac' or 'apple ipod' will return the more accurate intention. 
+
+Also, all intentions must be express only in text. For example, if I want to find a document that was written after a certain date, or a document written by at least 3 collaborators, or a photo with a particular person in it, expressing it in a text query is pretty challenging. This is the problem posed in parsing and identifying the search query, the first part of the query phase. For SaushEngine, I made broad assumptions and parsing the search query becomes only a matter of tokenizing the search input into words and stemming the words.
+
+The second part of the query phase is to return relevant results. This is usually implementation specific and is dependent on the index that has been generated. The challenge in this part doesn't really lie here, it lies in sorting the results by relevance. Although this sounds simple, it can be a truly profound problem with an amazing variety of solutions. Choosing the correct sorting solutions (also called ranking algorithms), generating the correct sorted relevance and responding with reasonable performance is the balance a search engine designer must make.
+
+There are a large number of ranking algorithms that can be used for a search engine. The most famous one is probably PageRank, the ranking algorithm created by the Google founders, Larry Page and Sergey Brin. PageRank assigns a score for every page depending on the number and importance of pages that links to it and uses that to rank the page. Other algorithms use different methods, from getting feedback from the search engine users to rank the search results (the more times a user clicks on a search result, the higher it is ranked) to inspecting the contents of the page itself for clues on its relevance.
+
+For SaushEngine, I chose 3 very simple ranking algorithms that are based on the content of the page itself:
+
+Location of the search words
+Frequency of the search words
+Distance of the search words
+
+Location
+
+The location ranking algorithm is very simple. The assumption made here is that if the search word is near to the top of the document, it will be ranked higher.
+
+Frequency
+
+The frequency ranking algorithm is also quite simple. The page that has more of the search words will be ranked higher.
+
+Distance
+
+The distance ranking algorithm inspects the distance of the search words between each other on every page. The closer the words are to each other on a page, the higher that page will be ranked. For example, if I search for 'brown fox' in these 2 documents:
+
+1 - The quick brown fox jumped over the lazy dog
+2 - The brown dog chased after the fox.
+
+The will both turn up the search results, but document 1 will be more relevant as the distance between 'brown' and 'fox' in document 1 is 0 while in document 2 it is 4.
+
+Let's see how SaushEngine implements these 2 ranking algorithms. SaushEngine's ranking algorithms are in a class named Digger, in a file named digger.rb. Here's the full source code to digger.rb:
+
+[code]
+require 'index'
+
+class Digger
+  SEARCH_LIMIT = 19  
+  
+  def search(for_text)
+    @search_params = for_text.words
+    wrds = []
+    @search_params.each { |param| wrds << "stem = '#{param}'" }
+    word_sql = "select * from words where #{wrds.join(" or ")}"
+    @search_words = repository(:default).adapter.query(word_sql)    
+    tables, joins, ids = [], [], []
+    @search_words.each_with_index { |w, index|
+      tables << "locations loc#{index}"
+      joins << "loc#{index}.page_id = loc#{index+1}.page_id"
+      ids << "loc#{index}.word_id = #{w.id}"    
+    }
+    joins.pop        
+    @common_select = "from #{tables.join(', ')} where #{(joins + ids).join(' and ')} group by loc0.page_id"    
+    rank[0..SEARCH_LIMIT]
+  end
+
+  def rank
+    merge_rankings(frequency_ranking, location_ranking, distance_ranking)
+  end
+    
+  def frequency_ranking
+    freq_sql= "select loc0.page_id, count(loc0.page_id) as count #{@common_select} order by count desc"
+    list = repository(:default).adapter.query(freq_sql)
+    rank = {}
+    list.size.times { |i| rank[list[i].page_id] = list[i].count.to_f/list[0].count.to_f }  
+    return rank
+  end  
+  
+  def location_ranking
+    total = []
+    @search_words.each_with_index { |w, index| total << "loc#{index}.position + 1" }
+    loc_sql = "select loc0.page_id, (#{total.join(' + ')}) as total #{@common_select} order by total asc" 
+    list = repository(:default).adapter.query(loc_sql) 
+    rank = {}
+    list.size.times { |i| rank[list[i].page_id] = list[0].total.to_f/list[i].total.to_f }
+    return rank
+  end
+  
+  def distance_ranking
+    return {} if @search_words.size == 1
+    dist, total = [], []
+    @search_words.each_with_index { |w, index| total << "loc#{index}.position" }    
+    total.size.times { |index| dist << "abs(#{total[index]} - #{total[index + 1]})" unless index == total.size - 1 }    
+    dist_sql = "select loc0.page_id, (#{dist.join(' + ')}) as dist #{@common_select} order by dist asc"   
+    list = repository(:default).adapter.query(dist_sql) 
+    rank = Hash.new
+    list.size.times { |i| rank[list[i].page_id] = list[0].dist.to_f/list[i].dist.to_f }
+    return rank
+  end
+  
+  def merge_rankings(*rankings)
+    r = {}
+    rankings.each { |ranking| r.merge!(ranking) { |key, oldval, newval| oldval + newval} }
+    r.sort {|a,b| b[1]<=>a[1]}    
+  end
+end
+[/code]
+
+The implementation is mostly done in SQL, as can be expected. The basic mechanism is to generate the SQL queries (one for each ranking algorithm) from the code and send it to MySQL using a DataMapper pass-through method. The results from the queries are then processed as ranks and are sorted accordingly by a rank merging method.
+
+Let's look at each method in greater detail. The search method is the main one, which takes in a text string search query as input. This search query is then broken down into different word stems and we try to look for these words in our index, to get their row IDs for easier and faster manipulation. Next, we create the common part of the search query, something that is needed for each subsequent query and call the rank method.
+
+The rank method is an aggregator that calls a number of ranking methods in sequence, and merges the returned rank lists together. A rank list is nothing more than an array of 2 item arrays, with the first item being the word ID and the second item being its rank by that algorithm:
+
+[ [1123, 0.452],
+  [557 , 0.314],
+  [3263, 0.124] ]
+
+The above means that there are 3 words in the rank list, the first being a word with the word ID 1123 and this word is ranked with a number 0.452, the second word is 557 and so on. Merging the returned rank lists would just mean that if we have the same words in the different rank lists but given a different ranking number, we add the rank numbers together.
+
+Let's look at the ranking algorithms. The easiest is the frequency algorithm. In this algorithm, we rank the page according to the number of times the searched words appear in that page. This is the 
 
