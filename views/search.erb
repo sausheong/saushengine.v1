@@ -14,8 +14,9 @@
   </style>
 </head>
 <body>
+<h2>SaushEngine</h2>
 <form method="post" action="/search">
-	 <input name="q" value="<%= params[:q]%>" size="60"> <input value="search" type="submit">
+	 <input name="q" value="<%= params[:q]%>" size="30"> <input value="search" type="submit">
 </form>
 
 <div><%= "time taken - #{@time_taken}" unless @results.nil?%></div>
@@ -27,5 +28,6 @@
 <% } unless @results.nil? %>
 </ol>
 </div>
+<div>copyright &copy; Chang Sau Sheong 2009</div>
 </body>
 </html>
