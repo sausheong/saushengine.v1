@@ -1,6 +1,6 @@
 require 'rubygems'
 require 'dm-core'
-require 'dm-timestamps'
+require 'dm-more'
 require 'stemmer'
 require 'robots'
 require 'open-uri'
