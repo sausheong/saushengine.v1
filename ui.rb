@@ -14,3 +14,7 @@ post '/search' do
   @time_taken = "#{"%6.2f" % (t1 - t0)} secs"
   erb :search
 end
+
+get '/info' do
+  "There are #{Page.count} pages in the index."
+end
