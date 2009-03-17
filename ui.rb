@@ -15,6 +15,18 @@ post '/search' do
   erb :search
 end
 
+error MysqlError do
+    'Can\'t find this in the index, try <a href=\'/\'>again</a>'
+end
+
+error do
+    'Something whacked happened dude, try <a href=\'/\'>again</a>'
+end
+
+not_found do
+    'Can\'t find this dude, try <a href=\'/\'>again</a>'
+end
+
 get '/info' do
   "There are #{Page.count} pages in the index."
 end

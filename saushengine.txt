@@ -49,7 +49,7 @@ Performance of the crawler is critical to the search engine. It determines the n
 
 Let's go deeper into the design. This is the full source code for index.rb
 
-[code]
+[source language='ruby']
 require 'rubygems'
 require 'dm-core'
 require 'dm-timestamps'
@@ -128,7 +128,7 @@ class String
 end
 
 DataMapper.auto_migrate! if ARGV[0] == 'reset'
-[/code]
+[/source]
 
 Note the various libraries I used for SaushEngine:
 DataMapper
@@ -140,7 +140,7 @@ I also use the MySQL relational database as the index (which we'll get to later)
 
 Now take a look at spider.rb, which is probably the largest file in SaushEngine, around 100 lines of code:
 
-[code]
+[source language='ruby']
 require 'rubygems'
 require 'index'
 
@@ -249,7 +249,7 @@ $stdout.sync = true
 spider = Spider.new
 spider.start
 
-[/code]
+[/source]
 
 The Spider class is a full-fledged Internet crawler. It loads its seed URLs from a YAML file named 'seed.yml' and processes each URL in that list. To play nice and comply with the Robots Exclusion Protocol, I use a slightly modified Robots library based on Kyle Maxwell's robots library, and set the name of the crawler as 'saush-spider'. As the crawler goes through each URL, it tries to index each one of them. If it successfully indexes the page, it goes through each link in the page and tries to add it to newly found pages bucket if it is allowed (checking robots.txt), or if if it not already added. At the end of the original seed list, it will take this bucket and replace it in the seed URLs list in the YAML file. This is effectively a breadth-first search that goes through each URL at every level before going down to the next level.
 
@@ -306,17 +306,17 @@ There are a large number of ranking algorithms that can be used for a search eng
 
 For SaushEngine, I chose 3 very simple ranking algorithms that are based on the content of the page itself:
 
-Location of the search words
 Frequency of the search words
+Location of the search words
 Distance of the search words
-
-Location
-
-The location ranking algorithm is very simple. The assumption made here is that if the search word is near to the top of the document, it will be ranked higher.
 
 Frequency
 
-The frequency ranking algorithm is also quite simple. The page that has more of the search words will be ranked higher.
+The frequency ranking algorithm is also quite simple. The page that has more of the search words is assumed to be more relevant.
+
+Location
+
+The location ranking algorithm is very simple. The assumption made here is that if the search word is near to the top of the document, the page is more relevant.
 
 Distance
 
@@ -329,7 +329,7 @@ The will both turn up the search results, but document 1 will be more relevant a
 
 Let's see how SaushEngine implements these 2 ranking algorithms. SaushEngine's ranking algorithms are in a class named Digger, in a file named digger.rb. Here's the full source code to digger.rb:
 
-[code]
+[source language='ruby']
 require 'index'
 
 class Digger
@@ -392,7 +392,7 @@ class Digger
     r.sort {|a,b| b[1]<=>a[1]}    
   end
 end
-[/code]
+[/source]
 
 The implementation is mostly done in SQL, as can be expected. The basic mechanism is to generate the SQL queries (one for each ranking algorithm) from the code and send it to MySQL using a DataMapper pass-through method. The results from the queries are then processed as ranks and are sorted accordingly by a rank merging method.
 
@@ -406,5 +406,122 @@ The rank method is an aggregator that calls a number of ranking methods in seque
 
 The above means that there are 3 words in the rank list, the first being a word with the word ID 1123 and this word is ranked with a number 0.452, the second word is 557 and so on. Merging the returned rank lists would just mean that if we have the same words in the different rank lists but given a different ranking number, we add the rank numbers together.
 
-Let's look at the ranking algorithms. The easiest is the frequency algorithm. In this algorithm, we rank the page according to the number of times the searched words appear in that page. This is the 
+Let's look at the ranking algorithms. The easiest is the frequency algorithm. In this algorithm, we rank the page according to the number of times the searched words appear in that page. This is the SQL query that is normally generated from a search with 2 effective terms:
 
+[source language='ruby']
+SELECT loc0.page_id, count(loc0.page_id) as count FROM locations loc0, locations loc1 
+WHERE loc0.page_id = loc1.page_id AND 
+      loc0.word_id = 1296 AND 
+      loc1.word_id = 8839 
+GROUP BY loc0.page_id ORDER BY count DESC
+[/source]
+
+This returns a resultset like this:
+<se05>
+
+which obviously tells us which page has the most count of the given words. To normalize the ranking, just divide all the word counts with the largest count (in this case it is 1575). The highest ranked page has a rank count of 1, while the rest of the pages are ranked at numbers smaller than 1.
+
+The location algorithm is about the same as the frequency algorithm. Here, we rank the page according to how close the word is to the top of the page. With multi-word searches, this becomes an exercise in adding the locations of each word. The is the SQL query from the same search:
+
+[source language='ruby']
+SELECT loc0.page_id, (loc0.position + 1 + loc1.position + 1) as total FROM locations loc0, locations loc1 
+WHERE loc0.page_id = loc1.page_id AND 
+      loc0.word_id = 1296 AND 
+      loc1.word_id = 8839 
+GROUP BY loc0.page_id ORDER BY total ASC
+[/source]
+
+This returns a resultset like this:
+<se06>
+
+which again obviously tells us which page has those words closest to the top of the page. To normalize the ranking however, we can't use the same strategy as before, which is to divide each count by the largest count, as the lower the number is, the higher it should be ranked. Instead, I inversed the results (dividing the smallest total by each page total). For the smallest total this produces a rank count of 1 again, and the rest are ranked at numbers smaller than 1.
+
+The previous 2 algorithms were relatively simple, the word distance is slightly tricky. We want to find the distance between all the search terms. For just 1 search term, this is a non-event as there is no distance. For 2 search terms, this is also pretty easy as it is only searching the distance between 2 words. It becomes tricky for 3 or more search terms. Should I find the distance between word 1 and 2 then word 1 and 3 then word 2 and 3? What if there are 4 or more terms? The growth in processing becomes factorial. I opted for a simpler approach, which is, for 3 terms, to find the distance between word 1 and 2 and then word 2 and 3. For 4 terms, it will be the distance between word 1 and word 2, then word 2 and word 3 and finally word 3 and word 4. The growth in processing then becomes a more manageable linear growth.
+
+This is the SQL generated by this approach for 3 terms (adding 1 more additional term from above):
+
+[source language='ruby']
+SELECT loc0.page_id, (abs(loc0.position - loc1.position) + abs(loc1.position - loc2.position)) as dist 
+FROM locations loc0, locations loc1, locations loc2 
+WHERE loc0.page_id = loc1.page_id AND 
+      loc1.page_id = loc2.page_id AND 
+      loc0.word_id = 1296 AND 
+      loc1.word_id = 8839 AND 
+      loc2.word_id = 8870 
+GROUP BY loc0.page_id ORDER BY dist ASC
+[/source]
+
+I use the abs function in MySQL to get the distance between 2 word locations in the same page. This returns a resultset like this:
+<se07>
+
+Like the location algorithm, the smaller the distance, the more relevant the page is, so the same strategy in creating the page rank.
+
+The rankings that are returned by the different ranking algorithms are added up together equally to give a final ranking of each page. While I put equal emphasis on each ranking algorithm, this doesn't necessarily need to be so. I could have easily put in parameters that would weigh the algorithms differently.
+
+We've finished up the search engine proper. However search engines need an interface for users to interact with. We need wrap a nice web application around SaushEngine. 
+
+User Interface
+
+I chose Sinatra, a minimal web application framework, to build a single page web application that wraps around SaushEngine. I chose it because of its style and simplicity and its ability to let me come up with a pretty good interface in just a few lines of code.
+
+For this part of SaushEngine, you'll need to install the Sinatra gem. We have 2 files, this is the Sinatra file, ui.rb:
+
+[source language='ruby']
+require 'rubygems'
+require 'digger'
+require 'sinatra'
+
+get '/' do
+  erb :search
+end
+
+post '/search' do
+  digger = Digger.new
+  t0 = Time.now
+  @results = digger.search(params[:q])
+  t1 = Time.now
+  @time_taken = "#{"%6.2f" % (t1 - t0)} secs"
+  erb :search
+end
+[/source]
+
+And this is the only view file, which you need to put in to a views folder, search.rb:
+
+[source language='ruby']
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+  <meta content="text/html; charset=utf-8" http-equiv="content-type">
+  <title>SaushEngine - UI</title>
+  <style>
+	body {
+	font-family:"lucida grande",tahoma,arial,sans-serif;
+	font-size:11px;
+	margin:5;
+	padding:5;
+	}
+  </style>
+</head>
+<body>
+<h2>SaushEngine</h2>
+<form method="post" action="/search">
+	 <input name="q" value="<%= params[:q]%>" size="30"> <input value="search" type="submit">
+</form>
+
+<div><%= "time taken - #{@time_taken}" unless @results.nil?%></div>
+<div id='results'>
+<ol>
+<% @results.each { |result| %>
+	<li><a href='<%= Page.get(result[0]).url%>'><%= Page.get(result[0]).title%></a> <br>
+		<%= Page.get(result[0]).url%>  (score : <%= "%4.3f" % result[1]%>)</li>
+<% } unless @results.nil? %>
+</ol>
+</div>
+</body>
+</html>
+
+[/source]
+
+I use ERb for templating because it's the most familiar to me. This is how it turns out:
+
+<se08>
