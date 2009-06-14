@@ -1,4 +1,4 @@
-Create an Internet search engine with 200 lines of Ruby code
+Create an Internet search engine with 200 lines of Ruby code 
 
 Most people who know me realises at some point in time that I go through cycles where I dive into things that catch my imagination and obsess over it for days, weeks or even months. Some things like origami and programming never really go away while others like bread-making make cometary orbits that come once in a few years. In the past long gone, this was fueled mainly through reading copious amounts of books and magazines, but since the arrival of the Internet, my obsessive cycles reach new peaks. It allowed me to reach out to like minded people and provided a massive amount of data that I can never hope to conquer.
 
