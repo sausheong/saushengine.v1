@@ -283,23 +283,23 @@ To improve the search performance, we insert an intermediate data structure betw
 
 There are many different types of data structures that can be used as an index to the data store but the most popular one used by search engines is the inverted index. A normal way of mapping documents to words (called the forward index) are to have each document map to a list of words. For example:
 
-[](images/se01.png)
+![](images/se01.png)
 
 An inverted index however maps words to the documents where they are found.
 
-[](images/se02.png)
+![](images/se02.png)
 
 A quick look at why inverted indices is much faster. Say we want to find all documents in the data store that has the word 'fox' in it. To do this on a normal forward index, we need to go through each record to check for the word 'fox' i.e. in our example above, we need to check the forward index 4 times to find that it exists in document 2 and 3. In the case of the inverted index, we need to just go to the 'fox' record and find out that it exists in document 2 and 3. Imagine a data store of a millions of records and you can see why an inverted index is so much more effective.
 
 In addition, a full inverted index also includes the position of the word within the document:
 
-[](images/se03.png)
+![](images/se03.png)
 
 This is useful for us later during the query phase.
 
 SaushEngine implements an inverted index in a relational database. Let's look at how this is implemented. I used MySQL as it is the most convenient but with some slight modifications you can probably use any relational database.
 
-[](images/se04.png)
+![](images/se04.png)
 
 The Pages table stores the list of web pages that has been crawled, along with its title and URL. The `updated_at` field determines if the page is stale and should be refreshed. The Words table stores a list of all words found in all documents. The words in this table however are stemmed using the Porter stemmer prior to storing, in order to reduce the number of words stored. An improved strategy could be to also include alternate but non-standard synonyms for e.g. database can be referred as DB but to keep things simple, only stemming is used. By this time you should recognize that Locations table is the inverted index, which maps words and its positions to the document. To access and interact with these tables through Ruby, I used DataMapper, an excellent Ruby object-relational mapping library. However a point to note is that DataMapper doesn't allow you to create indices on the relationship foreign keys, so you'll have to do it yourself. I found that putting 3 indices -- 1 for `word_id`, 1 for `page_id` and 1 with `word_id` and `page_id` improves the query performance tremendously. Also please note that the search engine requires you to have both dm-core and dm-more so remember to install those 2 gems.
 
@@ -436,7 +436,7 @@ GROUP BY loc0.page_id ORDER BY count DESC
 
 This returns a resultset like this:
 
-[](images/se05.png)
+![](images/se05.png)
 
 which obviously tells us which page has the most count of the given words. To normalize the ranking, just divide all the word counts with the largest count (in this case it is 1575). The highest ranked page has a rank count of 1, while the rest of the pages are ranked at numbers smaller than 1.
 
@@ -452,7 +452,7 @@ GROUP BY loc0.page_id ORDER BY total ASC
 
 This results a result set like this:
 
-[](images/se06.png)
+![](images/se06.png)
 
 which again obviously tells us which page has those words closest to the top of the page. To normalize the ranking however, we can't use the same strategy as before, which is to divide each count by the largest count, as the lower the number is, the higher it should be ranked. Instead, I inversed the results (dividing the smallest total by each page total). For the smallest total this produces a rank count of 1 again, and the rest are ranked at numbers smaller than 1.
 
@@ -473,7 +473,7 @@ GROUP BY loc0.page_id ORDER BY dist ASC
 
 I use the abs function in MySQL to get the distance between 2 word locations in the same page. This returns a resultset like this:
 
-[](images/se07.png)
+![](images/se07.png)
 
 Like the location algorithm, the smaller the distance, the more relevant the page is, so the same strategy in creating the page rank.
 
@@ -524,7 +524,7 @@ end
 
 Finally you need a view template `search.erb` to be its main user interface. I use ERB for templating because it's the most familiar to me. This is how it turns out:
 
-[](images/se08.png)
+![](images/se08.png)
 
 This is obviously not an industrial strength or commercially viable search engine. I wrote this as a tool to describe how search engines are written. There are much things to be improved, especially on the crawler, which is way too slow to be effective (unless it is a focused crawler) or the index (stored in a few MySQL tables but would have problems with a large index) or the query (ranking algorithms are too simplistic).
 
