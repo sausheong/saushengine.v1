@@ -54,84 +54,86 @@ Performance of the crawler is critical to the search engine. It determines the n
 
 Let's go deeper into the design. This is the full source code for index.rb
 
-    require 'rubygems'
-    require 'dm-core'
-    require 'dm-more'
-    require 'stemmer'
-    require 'robots'
-    require 'open-uri'
-    require 'hpricot'
+```ruby
+require 'rubygems'
+require 'dm-core'
+require 'dm-more'
+require 'stemmer'
+require 'robots'
+require 'open-uri'
+require 'hpricot'
 
-    DataMapper.setup(:default, 'mysql://root:root@localhost/saush')
-    FRESHNESS_POLICY = 60 * 60 * 24 * 7 # 7 days
+DataMapper.setup(:default, 'mysql://root:root@localhost/saush')
+FRESHNESS_POLICY = 60 * 60 * 24 * 7 # 7 days
 
-    class Page
-      include DataMapper::Resource
+class Page
+  include DataMapper::Resource
 
-      property :id,          Serial
-      property :url,         String, :length => 255
-      property :title,       String, :length => 255
-      has n, :locations
-      has n, :words, :through => :locations
-      property :created_at,  DateTime
-      property :updated_at,  DateTime  
-  
-      def self.find(url)
-        page = first(:url => url)
-        page = new(:url => url) if page.nil?
-        return page
-      end
+  property :id,          Serial
+  property :url,         String, :length => 255
+  property :title,       String, :length => 255
+  has n, :locations
+  has n, :words, :through => :locations
+  property :created_at,  DateTime
+  property :updated_at,  DateTime  
 
-      def refresh
-        update_attributes({:updated_at => DateTime.parse(Time.now.to_s)})
-      end
-  
-      def age
-        (Time.now - updated_at.to_time)/60
-      end
+  def self.find(url)
+    page = first(:url => url)
+    page = new(:url => url) if page.nil?
+    return page
+  end
 
-      def fresh?
-        age > FRESHNESS_POLICY ? false : true 
-      end
-    end
+  def refresh
+    update_attributes({:updated_at => DateTime.parse(Time.now.to_s)})
+  end
 
-    class Word
-      include DataMapper::Resource
+  def age
+    (Time.now - updated_at.to_time)/60
+  end
 
-      property :id,         Serial
-      property :stem,       String
-      has n, :locations
-      has n, :pages, :through => :locations
+  def fresh?
+    age > FRESHNESS_POLICY ? false : true 
+  end
+end
 
-      def self.find(word)
-        wrd = first(:stem => word)
-        wrd = new(:stem => word) if wrd.nil?
-        return wrd
-      end
-    end
+class Word
+  include DataMapper::Resource
 
-    class Location
-      include DataMapper::Resource
+  property :id,         Serial
+  property :stem,       String
+  has n, :locations
+  has n, :pages, :through => :locations
 
-      property :id,         Serial
-      property :position,   Integer
+  def self.find(word)
+    wrd = first(:stem => word)
+    wrd = new(:stem => word) if wrd.nil?
+    return wrd
+  end
+end
 
-      belongs_to :word
-      belongs_to :page
-    end
+class Location
+  include DataMapper::Resource
 
-    class String
-      def words
-        words = self.gsub(/[^\w\s]/,"").split
-        d = []
-        words.each { |word| d << word.downcase.stem unless (COMMON_WORDS.include?(word) or word.size > 50) }
-        return d
-      end
+  property :id,         Serial
+  property :position,   Integer
 
-      COMMON_WORDS = ['a','able','about','above','abroad','according','accordingly','across','actually','adj','after','afterwards','again','against','ago','ahead','aint','all','allow','allows','almost','alone','along','alongside','already','also','although','always','am','amid','amidst','among','amongst','an','and','another','any','anybody','anyhow','anyone','anything','anyway','anyways','anywhere','apart','appear','appreciate','appropriate','are','arent','around','as','as','aside','ask','asking','associated','at','available','away','awfully','b','back','backward','backwards','be','became','because','become','becomes','becoming','been','before','beforehand','begin','behind','being','believe','below','beside','besides','best','better','between','beyond','both','brief','but','by','c','came','can','cannot','cant','cant','caption','cause','causes','certain','certainly','changes','clearly','cmon','co','co.','com','come','comes','concerning','consequently','consider','considering','contain','containing','contains','corresponding','could','couldnt','course','cs','currently','d','dare','darent','definitely','described','despite','did','didnt','different','directly','do','does','doesnt','doing','done','dont','down','downwards','during','e','each','edu','eg','eight','eighty','either','else','elsewhere','end','ending','enough','entirely','especially','et','etc','even','ever','evermore','every','everybody','everyone','everything','everywhere','ex','exactly','example','except','f','fairly','far','farther','few','fewer','fifth','first','five','followed','following','follows','for','forever','former','formerly','forth','forward','found','four','from','further','furthermore','g','get','gets','getting','given','gives','go','goes','going','gone','got','gotten','greetings','h','had','hadnt','half','happens','hardly','has','hasnt','have','havent','having','he','hed','hell','hello','help','hence','her','here','hereafter','hereby','herein','heres','hereupon','hers','herself','hes','hi','him','himself','his','hither','hopefully','how','howbeit','however','hundred','i','id','ie','if','ignored','ill','im','immediate','in','inasmuch','inc','inc.','indeed','indicate','indicated','indicates','inner','inside','insofar','instead','into','inward','is','isnt','it','itd','itll','its','its','itself','ive','j','just','k','keep','keeps','kept','know','known','knows','l','last','lately','later','latter','latterly','least','less','lest','let','lets','like','liked','likely','likewise','little','look','looking','looks','low','lower','ltd','m','made','mainly','make','makes','many','may','maybe','maynt','me','mean','meantime','meanwhile','merely','might','mightnt','mine','minus','miss','more','moreover','most','mostly','mr','mrs','much','must','mustnt','my','myself','n','name','namely','nd','near','nearly','necessary','need','neednt','needs','neither','never','neverf','neverless','nevertheless','new','next','nine','ninety','no','nobody','non','none','nonetheless','noone','no-one','nor','normally','not','nothing','notwithstanding','novel','now','nowhere','o','obviously','of','off','often','oh','ok','okay','old','on','once','one','ones','ones','only','onto','opposite','or','other','others','otherwise','ought','oughtnt','our','ours','ourselves','out','outside','over','overall','own','p','particular','particularly','past','per','perhaps','placed','please','plus','possible','presumably','probably','provided','provides','q','que','quite','qv','r','rather','rd','re','really','reasonably','recent','recently','regarding','regardless','regards','relatively','respectively','right','round','s','said','same','saw','say','saying','says','second','secondly','see','seeing','seem','seemed','seeming','seems','seen','self','selves','sensible','sent','serious','seriously','seven','several','shall','shant','she','shed','shell','shes','should','shouldnt','since','six','so','some','somebody','someday','somehow','someone','something','sometime','sometimes','somewhat','somewhere','soon','sorry','specified','specify','specifying','still','sub','such','sup','sure','t','take','taken','taking','tell','tends','th','than','thank','thanks','thanx','that','thatll','thats','thats','thatve','the','their','theirs','them','themselves','then','thence','there','thereafter','thereby','thered','therefore','therein','therell','therere','theres','theres','thereupon','thereve','these','they','theyd','theyll','theyre','theyve','thing','things','think','third','thirty','this','thorough','thoroughly','those','though','three','through','throughout','thru','thus','till','to','together','too','took','toward','towards','tried','tries','truly','try','trying','ts','twice','two','u','un','under','underneath','undoing','unfortunately','unless','unlike','unlikely','until','unto','up','upon','upwards','us','use','used','useful','uses','using','usually','v','value','various','versus','very','via','viz','vs','w','want','wants','was','wasnt','way','we','wed','welcome','well','well','went','were','were','werent','weve','what','whatever','whatll','whats','whatve','when','whence','whenever','where','whereafter','whereas','whereby','wherein','wheres','whereupon','wherever','whether','which','whichever','while','whilst','whither','who','whod','whoever','whole','wholl','whom','whomever','whos','whose','why','will','willing','wish','with','within','without','wonder','wont','would','wouldnt','x','y','yes','yet','you','youd','youll','your','youre','yours','yourself','yourselves','youve','z','zero']  
-    end
+  belongs_to :word
+  belongs_to :page
+end
 
-    DataMapper.auto_migrate! if ARGV[0] == 'reset'
+class String
+  def words
+    words = self.gsub(/[^\w\s]/,"").split
+    d = []
+    words.each { |word| d << word.downcase.stem unless (COMMON_WORDS.include?(word) or word.size > 50) }
+    return d
+  end
+
+  COMMON_WORDS = ['a','able','about','above','abroad','according','accordingly','across','actually','adj','after','afterwards','again','against','ago','ahead','aint','all','allow','allows','almost','alone','along','alongside','already','also','although','always','am','amid','amidst','among','amongst','an','and','another','any','anybody','anyhow','anyone','anything','anyway','anyways','anywhere','apart','appear','appreciate','appropriate','are','arent','around','as','as','aside','ask','asking','associated','at','available','away','awfully','b','back','backward','backwards','be','became','because','become','becomes','becoming','been','before','beforehand','begin','behind','being','believe','below','beside','besides','best','better','between','beyond','both','brief','but','by','c','came','can','cannot','cant','cant','caption','cause','causes','certain','certainly','changes','clearly','cmon','co','co.','com','come','comes','concerning','consequently','consider','considering','contain','containing','contains','corresponding','could','couldnt','course','cs','currently','d','dare','darent','definitely','described','despite','did','didnt','different','directly','do','does','doesnt','doing','done','dont','down','downwards','during','e','each','edu','eg','eight','eighty','either','else','elsewhere','end','ending','enough','entirely','especially','et','etc','even','ever','evermore','every','everybody','everyone','everything','everywhere','ex','exactly','example','except','f','fairly','far','farther','few','fewer','fifth','first','five','followed','following','follows','for','forever','former','formerly','forth','forward','found','four','from','further','furthermore','g','get','gets','getting','given','gives','go','goes','going','gone','got','gotten','greetings','h','had','hadnt','half','happens','hardly','has','hasnt','have','havent','having','he','hed','hell','hello','help','hence','her','here','hereafter','hereby','herein','heres','hereupon','hers','herself','hes','hi','him','himself','his','hither','hopefully','how','howbeit','however','hundred','i','id','ie','if','ignored','ill','im','immediate','in','inasmuch','inc','inc.','indeed','indicate','indicated','indicates','inner','inside','insofar','instead','into','inward','is','isnt','it','itd','itll','its','its','itself','ive','j','just','k','keep','keeps','kept','know','known','knows','l','last','lately','later','latter','latterly','least','less','lest','let','lets','like','liked','likely','likewise','little','look','looking','looks','low','lower','ltd','m','made','mainly','make','makes','many','may','maybe','maynt','me','mean','meantime','meanwhile','merely','might','mightnt','mine','minus','miss','more','moreover','most','mostly','mr','mrs','much','must','mustnt','my','myself','n','name','namely','nd','near','nearly','necessary','need','neednt','needs','neither','never','neverf','neverless','nevertheless','new','next','nine','ninety','no','nobody','non','none','nonetheless','noone','no-one','nor','normally','not','nothing','notwithstanding','novel','now','nowhere','o','obviously','of','off','often','oh','ok','okay','old','on','once','one','ones','ones','only','onto','opposite','or','other','others','otherwise','ought','oughtnt','our','ours','ourselves','out','outside','over','overall','own','p','particular','particularly','past','per','perhaps','placed','please','plus','possible','presumably','probably','provided','provides','q','que','quite','qv','r','rather','rd','re','really','reasonably','recent','recently','regarding','regardless','regards','relatively','respectively','right','round','s','said','same','saw','say','saying','says','second','secondly','see','seeing','seem','seemed','seeming','seems','seen','self','selves','sensible','sent','serious','seriously','seven','several','shall','shant','she','shed','shell','shes','should','shouldnt','since','six','so','some','somebody','someday','somehow','someone','something','sometime','sometimes','somewhat','somewhere','soon','sorry','specified','specify','specifying','still','sub','such','sup','sure','t','take','taken','taking','tell','tends','th','than','thank','thanks','thanx','that','thatll','thats','thats','thatve','the','their','theirs','them','themselves','then','thence','there','thereafter','thereby','thered','therefore','therein','therell','therere','theres','theres','thereupon','thereve','these','they','theyd','theyll','theyre','theyve','thing','things','think','third','thirty','this','thorough','thoroughly','those','though','three','through','throughout','thru','thus','till','to','together','too','took','toward','towards','tried','tries','truly','try','trying','ts','twice','two','u','un','under','underneath','undoing','unfortunately','unless','unlike','unlikely','until','unto','up','upon','upwards','us','use','used','useful','uses','using','usually','v','value','various','versus','very','via','viz','vs','w','want','wants','was','wasnt','way','we','wed','welcome','well','well','went','were','were','werent','weve','what','whatever','whatll','whats','whatve','when','whence','whenever','where','whereafter','whereas','whereby','wherein','wheres','whereupon','wherever','whether','which','whichever','while','whilst','whither','who','whod','whoever','whole','wholl','whom','whomever','whos','whose','why','will','willing','wish','with','within','without','wonder','wont','would','wouldnt','x','y','yes','yet','you','youd','youll','your','youre','yours','yourself','yourselves','youve','z','zero']  
+end
+
+DataMapper.auto_migrate! if ARGV[0] == 'reset'
+```
 
 Note the various libraries I used for SaushEngine:
 
@@ -144,125 +146,126 @@ I also use the MySQL relational database as the index (which we'll get to later)
 
 Now take a look at spider.rb, which is probably the largest file in SaushEngine, around 100 lines of code:
 
-    require 'rubygems'
-    require 'index'
+```ruby
+require 'rubygems'
+require 'index'
 
-    LAST_CRAWLED_PAGES = 'seed.yml'
-    DO_NOT_CRAWL_TYPES = %w(.pdf .doc .xls .ppt .mp3 .m4v .avi .mpg .rss .xml .json .txt .git .zip .md5 .asc .jpg .gif .png)
-    USER_AGENT = 'saush-spider'
+LAST_CRAWLED_PAGES = 'seed.yml'
+DO_NOT_CRAWL_TYPES = %w(.pdf .doc .xls .ppt .mp3 .m4v .avi .mpg .rss .xml .json .txt .git .zip .md5 .asc .jpg .gif .png)
+USER_AGENT = 'saush-spider'
 
-    class Spider
-  
-      # start the spider
-      def start
-        Hpricot.buffer_size = 204800
-        process(YAML.load_file(LAST_CRAWLED_PAGES))
-      end
+class Spider
 
-      # process the loaded pages
-      def process(pages)
-        robot = Robots.new USER_AGENT
-        until pages.nil? or pages.empty? 
-          newfound_pages = []
-          pages.each { |page|
-            begin
-              if add_to_index?(page) then          
-                uri = URI.parse(page)
-                host = "#{uri.scheme}://#{uri.host}"
-                open(page, "User-Agent" => USER_AGENT) { |s|
-                  (Hpricot(s)/"a").each { |a|                
-                    url = scrub(a.attributes['href'], host)
-                    newfound_pages << url unless url.nil? or !robot.allowed? url or newfound_pages.include? url
-                  }
-                } 
-              end
-            rescue => e 
-              print "\n** Error encountered crawling - #{page} - #{e.to_s}"
-            rescue Timeout::Error => e
-              print "\n** Timeout encountered - #{page} - #{e.to_s}"
-            end
-          }
-          pages = newfound_pages
-          File.open(LAST_CRAWLED_PAGES, 'w') { |out| YAML.dump(newfound_pages, out) }
-        end    
-      end
+  # start the spider
+  def start
+    Hpricot.buffer_size = 204800
+    process(YAML.load_file(LAST_CRAWLED_PAGES))
+  end
 
-      # add the page to the index
-      def add_to_index?(url)
-        print "\n- indexing #{url}" 
-        t0 = Time.now
-        page = Page.find(scrub(url))
-    
-        # if the page is not in the index, then index it
-        if page.new_record? then    
-          index(url) { |doc_words, title|
-            dsize = doc_words.size.to_f
-            puts " [new] - (#{dsize.to_i} words)"
-            doc_words.each_with_index { |w, l|    
-              printf("\r\e - %6.2f%",(l*100/dsize))
-              loc = Location.new(:position => l)
-              loc.word, loc.page, page.title = Word.find(w), page, title
-              loc.save
-            }
-          }
-    
-        # if it is but it is not fresh, then update it
-        elsif not page.fresh? then
-          index(url) { |doc_words, title|
-            dsize = doc_words.size.to_f
-            puts " [refreshed] - (#{dsize.to_i} words)"
-            page.locations.destroy!
-            doc_words.each_with_index { |w, l|    
-              printf("\r\e - %6.2f%",(l*100/dsize))
-              loc = Location.new(:position => l)
-              loc.word, loc.page, page.title = Word.find(w), page, title
-              loc.save
-            }        
-          }
-          page.refresh
-      
-        #otherwise just ignore it
-        else
-          puts " - (x) already indexed"
-          return false
-        end
-        t1 = Time.now
-        puts "  [%6.2f sec]" % (t1 - t0)
-        return true          
-      end
-  
-      # scrub the given link
-      def scrub(link, host=nil)
-        unless link.nil? then
-          return nil if DO_NOT_CRAWL_TYPES.include? link[(link.size-4)..link.size] or link.include? '?' or link.include? '/cgi-bin/' or link.include? '&' or link[0..8] == 'javascript' or link[0..5] == 'mailto'
-          link = link.index('#') == 0 ? '' : link[0..link.index('#')-1] if link.include? '#'
-          if link[0..3] == 'http'
-            url = URI.join(URI.escape(link))                
-          else
-            url = URI.join(host, URI.escape(link))
+  # process the loaded pages
+  def process(pages)
+    robot = Robots.new USER_AGENT
+    until pages.nil? or pages.empty? 
+      newfound_pages = []
+      pages.each { |page|
+        begin
+          if add_to_index?(page) then          
+            uri = URI.parse(page)
+            host = "#{uri.scheme}://#{uri.host}"
+            open(page, "User-Agent" => USER_AGENT) { |s|
+              (Hpricot(s)/"a").each { |a|                
+                url = scrub(a.attributes['href'], host)
+                newfound_pages << url unless url.nil? or !robot.allowed? url or newfound_pages.include? url
+              }
+            } 
           end
-          return url.normalize.to_s
+        rescue => e 
+          print "\n** Error encountered crawling - #{page} - #{e.to_s}"
+        rescue Timeout::Error => e
+          print "\n** Timeout encountered - #{page} - #{e.to_s}"
         end
-      end
+      }
+      pages = newfound_pages
+      File.open(LAST_CRAWLED_PAGES, 'w') { |out| YAML.dump(newfound_pages, out) }
+    end    
+  end
 
-      # do the common indexing work
-      def index(url)
-        open(url, "User-Agent" => USER_AGENT){ |doc| 
-          h = Hpricot(doc)
-          title, body = h.search('title').text.strip, h.search('body')
-          %w(style noscript script form img).each { |tag| body.search(tag).remove}
-          array = []
-          body.first.traverse_element {|element| array << element.to_s.strip.gsub(/[^a-zA-Z ]/, '') if element.text? }
-          array.delete("")
-          yield(array.join(" ").words, title)
-        }    
-      end  
+  # add the page to the index
+  def add_to_index?(url)
+    print "\n- indexing #{url}" 
+    t0 = Time.now
+    page = Page.find(scrub(url))
+
+    # if the page is not in the index, then index it
+    if page.new_record? then    
+      index(url) { |doc_words, title|
+        dsize = doc_words.size.to_f
+        puts " [new] - (#{dsize.to_i} words)"
+        doc_words.each_with_index { |w, l|    
+          printf("\r\e - %6.2f%",(l*100/dsize))
+          loc = Location.new(:position => l)
+          loc.word, loc.page, page.title = Word.find(w), page, title
+          loc.save
+        }
+      }
+
+    # if it is but it is not fresh, then update it
+    elsif not page.fresh? then
+      index(url) { |doc_words, title|
+        dsize = doc_words.size.to_f
+        puts " [refreshed] - (#{dsize.to_i} words)"
+        page.locations.destroy!
+        doc_words.each_with_index { |w, l|    
+          printf("\r\e - %6.2f%",(l*100/dsize))
+          loc = Location.new(:position => l)
+          loc.word, loc.page, page.title = Word.find(w), page, title
+          loc.save
+        }        
+      }
+      page.refresh
+  
+    #otherwise just ignore it
+    else
+      puts " - (x) already indexed"
+      return false
     end
+    t1 = Time.now
+    puts "  [%6.2f sec]" % (t1 - t0)
+    return true          
+  end
 
-    $stdout.sync = true 
-    spider = Spider.new
-    spider.start
+  # scrub the given link
+  def scrub(link, host=nil)
+    unless link.nil? then
+      return nil if DO_NOT_CRAWL_TYPES.include? link[(link.size-4)..link.size] or link.include? '?' or link.include? '/cgi-bin/' or link.include? '&' or link[0..8] == 'javascript' or link[0..5] == 'mailto'
+      link = link.index('#') == 0 ? '' : link[0..link.index('#')-1] if link.include? '#'
+      if link[0..3] == 'http'
+        url = URI.join(URI.escape(link))                
+      else
+        url = URI.join(host, URI.escape(link))
+      end
+      return url.normalize.to_s
+    end
+  end
 
+  # do the common indexing work
+  def index(url)
+    open(url, "User-Agent" => USER_AGENT){ |doc| 
+      h = Hpricot(doc)
+      title, body = h.search('title').text.strip, h.search('body')
+      %w(style noscript script form img).each { |tag| body.search(tag).remove}
+      array = []
+      body.first.traverse_element {|element| array << element.to_s.strip.gsub(/[^a-zA-Z ]/, '') if element.text? }
+      array.delete("")
+      yield(array.join(" ").words, title)
+    }    
+  end  
+end
+
+$stdout.sync = true 
+spider = Spider.new
+spider.start
+```
 
 The Spider class is a full-fledged Internet crawler. It loads its seed URLs from a YAML file named seed.yml and processes each URL in that list. To play nice and comply with the Robots Exclusion Protocol, I use a slightly modified Robots library based on Kyle Maxwell's robots library, and set the name of the crawler as 'saush-spider'. As the crawler goes through each URL, it tries to index each one of them. If it successfully indexes the page, it goes through each link in the page and tries to add it to newly found pages bucket if it is allowed (checking robots.txt), or if if it not already added. At the end of the original seed list, it will take this bucket and replace it in the seed URLs list in the YAML file. This is effectively a breadth-first search that goes through each URL at every level before going down to the next level. Please note that I did some minor modifications to the robots library and the link to this is my fork out of GitHub, not Kyle's.
 
@@ -280,23 +283,23 @@ To improve the search performance, we insert an intermediate data structure betw
 
 There are many different types of data structures that can be used as an index to the data store but the most popular one used by search engines is the inverted index. A normal way of mapping documents to words (called the forward index) are to have each document map to a list of words. For example:
 
-(images/se01.png)
+[](images/se01.png)
 
 An inverted index however maps words to the documents where they are found.
 
-(images/se02.png)
+[](images/se02.png)
 
 A quick look at why inverted indices is much faster. Say we want to find all documents in the data store that has the word 'fox' in it. To do this on a normal forward index, we need to go through each record to check for the word 'fox' i.e. in our example above, we need to check the forward index 4 times to find that it exists in document 2 and 3. In the case of the inverted index, we need to just go to the 'fox' record and find out that it exists in document 2 and 3. Imagine a data store of a millions of records and you can see why an inverted index is so much more effective.
 
 In addition, a full inverted index also includes the position of the word within the document:
 
-(images/se03.png)
+[](images/se03.png)
 
 This is useful for us later during the query phase.
 
 SaushEngine implements an inverted index in a relational database. Let's look at how this is implemented. I used MySQL as it is the most convenient but with some slight modifications you can probably use any relational database.
 
-(images/se04.png)
+[](images/se04.png)
 
 The Pages table stores the list of web pages that has been crawled, along with its title and URL. The `updated_at` field determines if the page is stale and should be refreshed. The Words table stores a list of all words found in all documents. The words in this table however are stemmed using the Porter stemmer prior to storing, in order to reduce the number of words stored. An improved strategy could be to also include alternate but non-standard synonyms for e.g. database can be referred as DB but to keep things simple, only stemming is used. By this time you should recognize that Locations table is the inverted index, which maps words and its positions to the document. To access and interact with these tables through Ruby, I used DataMapper, an excellent Ruby object-relational mapping library. However a point to note is that DataMapper doesn't allow you to create indices on the relationship foreign keys, so you'll have to do it yourself. I found that putting 3 indices -- 1 for `word_id`, 1 for `page_id` and 1 with `word_id` and `page_id` improves the query performance tremendously. Also please note that the search engine requires you to have both dm-core and dm-more so remember to install those 2 gems.
 
@@ -344,70 +347,70 @@ The will both turn up the search results, but document 1 will be more relevant a
 
 Let's see how SaushEngine implements these 2 ranking algorithms. SaushEngine's ranking algorithms are in a class named Digger, in a file named `digger.rb`. Here's the full source code to `digger.rb`:
 
+```ruby
+require 'index'
 
-    require 'index'
+class Digger
+  SEARCH_LIMIT = 19  
 
-    class Digger
-      SEARCH_LIMIT = 19  
-  
-      def search(for_text)
-        @search_params = for_text.words
-        wrds = []
-        @search_params.each { |param| wrds << "stem = '#{param}'" }
-        word_sql = "select * from words where #{wrds.join(" or ")}"
-        @search_words = repository(:default).adapter.query(word_sql)    
-        tables, joins, ids = [], [], []
-        @search_words.each_with_index { |w, index|
-          tables << "locations loc#{index}"
-          joins << "loc#{index}.page_id = loc#{index+1}.page_id"
-          ids << "loc#{index}.word_id = #{w.id}"    
-        }
-        joins.pop        
-        @common_select = "from #{tables.join(', ')} where #{(joins + ids).join(' and ')} group by loc0.page_id"    
-        rank[0..SEARCH_LIMIT]
-      end
+  def search(for_text)
+    @search_params = for_text.words
+    wrds = []
+    @search_params.each { |param| wrds << "stem = '#{param}'" }
+    word_sql = "select * from words where #{wrds.join(" or ")}"
+    @search_words = repository(:default).adapter.query(word_sql)    
+    tables, joins, ids = [], [], []
+    @search_words.each_with_index { |w, index|
+      tables << "locations loc#{index}"
+      joins << "loc#{index}.page_id = loc#{index+1}.page_id"
+      ids << "loc#{index}.word_id = #{w.id}"    
+    }
+    joins.pop        
+    @common_select = "from #{tables.join(', ')} where #{(joins + ids).join(' and ')} group by loc0.page_id"    
+    rank[0..SEARCH_LIMIT]
+  end
 
-      def rank
-        merge_rankings(frequency_ranking, location_ranking, distance_ranking)
-      end
-    
-      def frequency_ranking
-        freq_sql= "select loc0.page_id, count(loc0.page_id) as count #{@common_select} order by count desc"
-        list = repository(:default).adapter.query(freq_sql)
-        rank = {}
-        list.size.times { |i| rank[list[i].page_id] = list[i].count.to_f/list[0].count.to_f }  
-        return rank
-      end  
-  
-      def location_ranking
-        total = []
-        @search_words.each_with_index { |w, index| total << "loc#{index}.position + 1" }
-        loc_sql = "select loc0.page_id, (#{total.join(' + ')}) as total #{@common_select} order by total asc" 
-        list = repository(:default).adapter.query(loc_sql) 
-        rank = {}
-        list.size.times { |i| rank[list[i].page_id] = list[0].total.to_f/list[i].total.to_f }
-        return rank
-      end
-  
-      def distance_ranking
-        return {} if @search_words.size == 1
-        dist, total = [], []
-        @search_words.each_with_index { |w, index| total << "loc#{index}.position" }    
-        total.size.times { |index| dist << "abs(#{total[index]} - #{total[index + 1]})" unless index == total.size - 1 }    
-        dist_sql = "select loc0.page_id, (#{dist.join(' + ')}) as dist #{@common_select} order by dist asc"  
-        list = repository(:default).adapter.query(dist_sql) 
-        rank = Hash.new
-        list.size.times { |i| rank[list[i].page_id] = list[0].dist.to_f/list[i].dist.to_f }
-        return rank
-      end
-  
-      def merge_rankings(*rankings)
-        r = {}
-        rankings.each { |ranking| r.merge!(ranking) { |key, oldval, newval| oldval + newval} }
-        r.sort {|a,b| b[1]<=>a[1]}    
-      end
-    end
+  def rank
+    merge_rankings(frequency_ranking, location_ranking, distance_ranking)
+  end
 
+  def frequency_ranking
+    freq_sql= "select loc0.page_id, count(loc0.page_id) as count #{@common_select} order by count desc"
+    list = repository(:default).adapter.query(freq_sql)
+    rank = {}
+    list.size.times { |i| rank[list[i].page_id] = list[i].count.to_f/list[0].count.to_f }  
+    return rank
+  end  
+
+  def location_ranking
+    total = []
+    @search_words.each_with_index { |w, index| total << "loc#{index}.position + 1" }
+    loc_sql = "select loc0.page_id, (#{total.join(' + ')}) as total #{@common_select} order by total asc" 
+    list = repository(:default).adapter.query(loc_sql) 
+    rank = {}
+    list.size.times { |i| rank[list[i].page_id] = list[0].total.to_f/list[i].total.to_f }
+    return rank
+  end
+
+  def distance_ranking
+    return {} if @search_words.size == 1
+    dist, total = [], []
+    @search_words.each_with_index { |w, index| total << "loc#{index}.position" }    
+    total.size.times { |index| dist << "abs(#{total[index]} - #{total[index + 1]})" unless index == total.size - 1 }    
+    dist_sql = "select loc0.page_id, (#{dist.join(' + ')}) as dist #{@common_select} order by dist asc"  
+    list = repository(:default).adapter.query(dist_sql) 
+    rank = Hash.new
+    list.size.times { |i| rank[list[i].page_id] = list[0].dist.to_f/list[i].dist.to_f }
+    return rank
+  end
+
+  def merge_rankings(*rankings)
+    r = {}
+    rankings.each { |ranking| r.merge!(ranking) { |key, oldval, newval| oldval + newval} }
+    r.sort {|a,b| b[1]<=>a[1]}    
+  end
+end
+```
 
 The implementation is mostly done in SQL, as can be expected. The basic mechanism is to generate the SQL queries (one for each ranking algorithm) from the code and send it to MySQL using a DataMapper pass-through method. The results from the queries are then processed as ranks and are sorted accordingly by a rank merging method.
 
@@ -423,32 +426,33 @@ The above means that there are 3 words in the rank list, the first being a word 
 
 Let's look at the ranking algorithms. The easiest is the frequency algorithm. In this algorithm, we rank the page according to the number of times the searched words appear in that page. This is the SQL query that is normally generated from a search with 2 effective terms:
 
-
-    SELECT loc0.page_id, count(loc0.page_id) as count FROM locations loc0, locations loc1
-    WHERE loc0.page_id = loc1.page_id AND
-      loc0.word_id = 1296 AND
-      loc1.word_id = 8839
-    GROUP BY loc0.page_id ORDER BY count DESC
+```ruby
+SELECT loc0.page_id, count(loc0.page_id) as count FROM locations loc0, locations loc1
+WHERE loc0.page_id = loc1.page_id AND
+  loc0.word_id = 1296 AND
+  loc1.word_id = 8839
+GROUP BY loc0.page_id ORDER BY count DESC
+```
 
 This returns a resultset like this:
 
-(images/se05.png)
+[](images/se05.png)
 
 which obviously tells us which page has the most count of the given words. To normalize the ranking, just divide all the word counts with the largest count (in this case it is 1575). The highest ranked page has a rank count of 1, while the rest of the pages are ranked at numbers smaller than 1.
 
 The location algorithm is about the same as the frequency algorithm. Here, we rank the page according to how close the word is to the top of the page. With multi-word searches, this becomes an exercise in adding the locations of each word. The is the SQL query from the same search:
 
-
-    SELECT loc0.page_id, (loc0.position + 1 + loc1.position + 1) as total FROM locations loc0, locations loc1
-    WHERE loc0.page_id = loc1.page_id AND
-      loc0.word_id = 1296 AND
-      loc1.word_id = 8839
-    GROUP BY loc0.page_id ORDER BY total ASC
-
+```sql
+SELECT loc0.page_id, (loc0.position + 1 + loc1.position + 1) as total FROM locations loc0, locations loc1
+WHERE loc0.page_id = loc1.page_id AND
+  loc0.word_id = 1296 AND
+  loc1.word_id = 8839
+GROUP BY loc0.page_id ORDER BY total ASC
+```
 
 This results a result set like this:
 
-(images/se06.png)
+[](images/se06.png)
 
 which again obviously tells us which page has those words closest to the top of the page. To normalize the ranking however, we can't use the same strategy as before, which is to divide each count by the largest count, as the lower the number is, the higher it should be ranked. Instead, I inversed the results (dividing the smallest total by each page total). For the smallest total this produces a rank count of 1 again, and the rest are ranked at numbers smaller than 1.
 
@@ -456,20 +460,20 @@ The previous 2 algorithms were relatively simple, the word distance is slightly 
 
 This is the SQL generated by this approach for 3 terms (adding 1 more additional term from above):
 
-
-    SELECT loc0.page_id, (abs(loc0.position - loc1.position) + abs(loc1.position - loc2.position)) as dist
-    FROM locations loc0, locations loc1, locations loc2
-    WHERE loc0.page_id = loc1.page_id AND
-      loc1.page_id = loc2.page_id AND
-      loc0.word_id = 1296 AND
-      loc1.word_id = 8839 AND
-      loc2.word_id = 8870
-    GROUP BY loc0.page_id ORDER BY dist ASC
-
+```ruby
+SELECT loc0.page_id, (abs(loc0.position - loc1.position) + abs(loc1.position - loc2.position)) as dist
+FROM locations loc0, locations loc1, locations loc2
+WHERE loc0.page_id = loc1.page_id AND
+  loc1.page_id = loc2.page_id AND
+  loc0.word_id = 1296 AND
+  loc1.word_id = 8839 AND
+  loc2.word_id = 8870
+GROUP BY loc0.page_id ORDER BY dist ASC
+```
 
 I use the abs function in MySQL to get the distance between 2 word locations in the same page. This returns a resultset like this:
 
-(images/se07.png)
+[](images/se07.png)
 
 Like the location algorithm, the smaller the distance, the more relevant the page is, so the same strategy in creating the page rank.
 
@@ -483,43 +487,44 @@ I chose Sinatra, a minimal web application framework, to build a single page web
 
 For this part of SaushEngine, you'll need to install the Sinatra gem. We have 2 files, this is the Sinatra file, ui.rb:
 
-    require 'rubygems'
-    require 'digger'
-    require 'sinatra'
+```ruby
+require 'rubygems'
+require 'digger'
+require 'sinatra'
 
-    get '/' do
-      erb :search
-    end
+get '/' do
+  erb :search
+end
 
-    post '/search' do
-      digger = Digger.new
-      t0 = Time.now
-      @results = digger.search(params[:q])
-      t1 = Time.now
-      @time_taken = "#{"%6.2f" % (t1 - t0)} secs"
-      erb :search
-    end
+post '/search' do
+  digger = Digger.new
+  t0 = Time.now
+  @results = digger.search(params[:q])
+  t1 = Time.now
+  @time_taken = "#{"%6.2f" % (t1 - t0)} secs"
+  erb :search
+end
 
-    error MysqlError do
-        'Can\'t find this in the index, try <a href=\'/\'>again</a>'
-    end
+error MysqlError do
+    'Can\'t find this in the index, try <a href=\'/\'>again</a>'
+end
 
-    error do
-        'Something whacked happened dude, try <a href=\'/\'>again</a>'
-    end
+error do
+    'Something whacked happened dude, try <a href=\'/\'>again</a>'
+end
 
-    not_found do
-        'Can\'t find this dude, try <a href=\'/\'>again</a>'
-    end
+not_found do
+    'Can\'t find this dude, try <a href=\'/\'>again</a>'
+end
 
-    get '/info' do
-      "There are #{Page.count} pages in the index."
-    end
-
+get '/info' do
+  "There are #{Page.count} pages in the index."
+end
+```
 
 Finally you need a view template `search.erb` to be its main user interface. I use ERB for templating because it's the most familiar to me. This is how it turns out:
 
-(images/se08.png)
+[](images/se08.png)
 
 This is obviously not an industrial strength or commercially viable search engine. I wrote this as a tool to describe how search engines are written. There are much things to be improved, especially on the crawler, which is way too slow to be effective (unless it is a focused crawler) or the index (stored in a few MySQL tables but would have problems with a large index) or the query (ranking algorithms are too simplistic).
 
